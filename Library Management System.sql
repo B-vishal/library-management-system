@@ -32,6 +32,7 @@ CREATE TABLE Books (
     Genre VARCHAR(50),
     CategoryID INT,
     StockQuantity INT NOT NULL,
+    AvailableQuantity INT NOT NULL,
     CONSTRAINT FK_Author FOREIGN KEY (AuthorID) REFERENCES Authors(AuthorID),
     CONSTRAINT FK_Publisher FOREIGN KEY (PublisherID) REFERENCES Publishers(PublisherID),
     CONSTRAINT FK_Category FOREIGN KEY (CategoryID) REFERENCES Categories(CategoryID)
@@ -79,98 +80,55 @@ CREATE TABLE Fines (
     CONSTRAINT FK_Transaction_Fine FOREIGN KEY (TransactionID) REFERENCES Transactions(TransactionID)
 );
 
--- Procedure to generate random date within a range
+-- Stored procedures for generating random data (as shown in a previous response)
+
+-- Additional tables and relationships can be added based on your requirements
+
+-- Stored procedures for functionalities like book checkout, return, reserve, etc.
 DELIMITER //
 
-CREATE PROCEDURE GenerateRandomDate(IN startDate DATE, IN endDate DATE, OUT randomDate DATE)
+-- Procedure to perform book checkout
+CREATE PROCEDURE CheckoutBook(IN bookID INT, IN borrowerID INT)
 BEGIN
-    SET randomDate = DATE_ADD(startDate, INTERVAL ROUND(RAND() * DATEDIFF(endDate, startDate)) DAY);
+    -- Check if the book is available
+    IF (SELECT AvailableQuantity FROM Books WHERE BookID = bookID) > 0 THEN
+        -- Update book quantity
+        UPDATE Books SET AvailableQuantity = AvailableQuantity - 1 WHERE BookID = bookID;
+
+        -- Insert transaction record
+        INSERT INTO Transactions (BookID, BorrowerID, CheckoutDate) VALUES (bookID, borrowerID, CURDATE());
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Book not available for checkout';
+    END IF;
+END //
+
+-- Procedure to perform book return
+CREATE PROCEDURE ReturnBook(IN transactionID INT)
+BEGIN
+    -- Check if the transaction exists and is not already returned
+    IF EXISTS (SELECT 1 FROM Transactions WHERE TransactionID = transactionID AND IsReturned = false) THEN
+        -- Update book quantity and transaction
+        UPDATE Books
+        JOIN Transactions ON Books.BookID = Transactions.BookID
+        SET Books.AvailableQuantity = Books.AvailableQuantity + 1,
+            Transactions.IsReturned = true,
+            Transactions.ReturnDate = CURDATE()
+        WHERE Transactions.TransactionID = transactionID;
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid transaction or book already returned';
+    END IF;
+END //
+
+-- Procedure to reserve a book
+CREATE PROCEDURE ReserveBook(IN bookID INT, IN borrowerID INT)
+BEGIN
+    -- Check if the book is available
+    IF (SELECT AvailableQuantity FROM Books WHERE BookID = bookID) > 0 THEN
+        -- Insert reservation record
+        INSERT INTO Reservations (BookID, BorrowerID, ReservationDate) VALUES (bookID, borrowerID, CURDATE());
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Book not available for reservation';
+    END IF;
 END //
 
 DELIMITER ;
-
--- Procedure to generate random data for Authors
-DELIMITER //
-
-CREATE PROCEDURE GenerateRandomAuthors(IN count INT)
-BEGIN
-    DECLARE i INT DEFAULT 1;
-
-    WHILE i <= count DO
-        INSERT INTO Authors (AuthorName, BirthDate, Nationality, Biography)
-        VALUES 
-            (CONCAT('Author', i), GenerateRandomDate('1800-01-01', '2000-12-31'), 'Nationality' || i, 'Biography' || i);
-
-        SET i = i + 1;
-    END WHILE;
-END //
-
-DELIMITER ;
-
--- Procedure to generate random data for Publishers
-DELIMITER //
-
-CREATE PROCEDURE GenerateRandomPublishers(IN count INT)
-BEGIN
-    DECLARE i INT DEFAULT 1;
-
-    WHILE i <= count DO
-        INSERT INTO Publishers (PublisherName, Location, FoundedDate)
-        VALUES 
-            (CONCAT('Publisher', i), 'Location' || i, GenerateRandomDate('1900-01-01', '2022-12-31'));
-
-        SET i = i + 1;
-    END WHILE;
-END //
-
-DELIMITER ;
-
--- Procedure to generate random data for Categories
-DELIMITER //
-
-CREATE PROCEDURE GenerateRandomCategories(IN count INT)
-BEGIN
-    DECLARE i INT DEFAULT 1;
-
-    WHILE i <= count DO
-        INSERT INTO Categories (CategoryName)
-        VALUES 
-            (CONCAT('Category', i));
-
-        SET i = i + 1;
-    END WHILE;
-END //
-
-DELIMITER ;
-
--- Procedure to generate random data for Books
-DELIMITER //
-
-CREATE PROCEDURE GenerateRandomBooks(IN count INT)
-BEGIN
-    DECLARE i INT DEFAULT 1;
-
-    WHILE i <= count DO
-        INSERT INTO Books (Title, ISBN, AuthorID, PublisherID, PublishedDate, Genre, CategoryID, StockQuantity)
-        VALUES 
-            (CONCAT('Book', i), CONCAT('ISBN', i), ROUND(RAND() * count), ROUND(RAND() * count), 
-            GenerateRandomDate('1900-01-01', '2022-12-31'), 'Genre' || i, ROUND(RAND() * count), ROUND(RAND() * 50));
-
-        SET i = i + 1;
-    END WHILE;
-END //
-
-DELIMITER ;
-
--- Procedure to generate random data for Borrowers
-DELIMITER //
-
-CREATE PROCEDURE GenerateRandomBorrowers(IN count INT)
-BEGIN
-    DECLARE i INT DEFAULT 1;
-
-    WHILE i <= count DO
-        INSERT INTO Borrowers (FirstName, LastName, Email, Phone, RegistrationDate)
-        VALUES 
-            (CONCAT('Borrower', i), 'LastName' || i, CONCAT('email', i, '@example.com'), 
-            CONCAT('+1234567', i), GenerateRandomDate('2020-01
